@@ -1,0 +1,31 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 14
+VisualStudioVersion = 14.0.25123.0
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GCVisualisation", "GCVisualisation\GCVisualisation.csproj", "{274B102E-42A8-4FBF-9F13-415B11E3DF80}"
+	ProjectSection(ProjectDependencies) = postProject
+		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD} = {059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}
+	EndProjectSection
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleApp", "SampleApp\SampleApp.csproj", "{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{274B102E-42A8-4FBF-9F13-415B11E3DF80}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{274B102E-42A8-4FBF-9F13-415B11E3DF80}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{274B102E-42A8-4FBF-9F13-415B11E3DF80}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{274B102E-42A8-4FBF-9F13-415B11E3DF80}.Release|Any CPU.Build.0 = Release|Any CPU
+		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+EndGlobal
