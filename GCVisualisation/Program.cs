@@ -137,6 +137,57 @@ namespace GCVisualisation
                 }
             };
 
+            //In a typical blocking GC (this means all ephemeral GCs and full blocking GCs) the event sequence is very simple:
+            //GCSuspendEE_V1 Event
+            //GCSuspendEEEnd_V1 Event    <– suspension is done
+            //GCStart_V1 Event
+            //GCEnd_V1 Event             <– actual GC is done
+            //GCRestartEEBegin_V1 Event
+            //GCRestartEEEnd_V1 Event    <– resumption is done.
+
+            // When NOT a B/G GC, Suspension MSec column is simply (timestamp of the GCSuspendEEEnd_V1 – timestamp of the GCSuspendEE_V1).
+
+            double pauseStart = 0;
+            session.Source.Clr.GCSuspendEEStop += suspendData =>
+            {
+                if (ProcessIdsUsedInRuns.Contains(suspendData.ProcessID) == false)
+                    return;
+
+                pauseStart = suspendData.TimeStampRelativeMSec;
+            };
+
+            session.Source.Clr.GCRestartEEStop += restartData =>
+            {
+                if (ProcessIdsUsedInRuns.Contains(restartData.ProcessID) == false)
+                    return;
+
+                // Only display this if the GC Type is Foreground, (Background is different!!)
+                // 0x0 - NonConcurrentGC - Blocking garbage collection occurred outside background garbage collection.
+                // 0x1 - BackgroundGC    - Background garbage collection.
+                // 0x2 - ForegroundGC    - Blocking garbage collection occurred during background garbage collection.
+                if (lastGCType == GCType.BackgroundGC)
+                    return;
+
+                var pauseDurationMSec = restartData.TimeStampRelativeMSec - pauseStart;
+                //Console.WriteLine(" <Pause: {0:N2} MSec> ", pauseDurationMSec);
+                // 0 -> 100 MSecs = "P", 
+                // 100 -> 200 MSecs = "PP", 
+                var pauseDuration = (int)(pauseDurationMSec / 100) + 1; 
+                if (pauseDuration == 0)
+                    return;
+
+                var pauseText = new string('P', pauseDuration);
+                if (pauseText.Length == 0)
+                lock (ConsoleLock)
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.BackgroundColor = ConsoleColor.DarkGray;
+                }
+
+                Console.Write(pauseText);
+                Console.ResetColor();            
+            };
+
             session.Source.Process();
         }
 
