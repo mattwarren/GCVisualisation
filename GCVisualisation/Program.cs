@@ -47,12 +47,37 @@ namespace GCVisualisation
                 session.Dispose();
             };
 
-            Console.WriteLine("Visualising GC Events, press <ENTER> to exit");
+            PrintSymbolInformation();
+            
+
+            Console.WriteLine("Visualising GC Events, press <ENTER> to exit"); 
             Console.ReadLine();
 
             if (process.HasExited == false)
                 process.Kill();
             session.Dispose();
+        }
+
+        private static void PrintSymbolInformation()
+        {
+            Console.WriteLine("Key to symbols:");
+            Console.WriteLine(" - '.'   represents ~100K of memory allocations");
+
+            Console.Write(" - ");
+            Console.ForegroundColor = GetColourForGC(0); Console.Write("0");
+            Console.ResetColor(); Console.Write("/");
+            Console.ForegroundColor = GetColourForGC(1); Console.Write("1");
+            Console.ResetColor(); Console.Write("/");
+            Console.ForegroundColor = GetColourForGC(2); Console.Write("2");
+            Console.ResetColor();
+            Console.WriteLine(" indicates a FOREGROUND GC Collection, for the given generation (0, 1 or 2)");
+
+            Console.Write(" - ");
+            Console.BackgroundColor = GetColourForGC(2); Console.ForegroundColor = ConsoleColor.Black; Console.Write("2");
+            Console.ResetColor();
+            Console.WriteLine("     indicates a BACKGROUND GC Collection (Gen 2 only)");
+
+            Console.WriteLine(new string('#', 25) + "\n");
         }
 
         private static object ConsoleLock = new object();
@@ -83,20 +108,14 @@ namespace GCVisualisation
                 }
             };
 
+            GCType lastGCType = 0;
             session.Source.Clr.GCStart += gcData =>
             {
                 if (ProcessIdsUsedInRuns.Contains(gcData.ProcessID) == false)
                     return;
 
-                var colourToUse = ConsoleColor.White;
-                if (gcData.Depth == 0)
-                    colourToUse = ConsoleColor.Yellow;
-                else if (gcData.Depth == 1)
-                    colourToUse = ConsoleColor.Blue;
-                else if (gcData.Depth == 2)
-                    colourToUse = ConsoleColor.Red;
-                else
-                    colourToUse = ConsoleColor.Green;
+                var colourToUse = GetColourForGC(gcData.Depth);
+                lastGCType = gcData.Type;
 
                 lock (ConsoleLock)
                 {
@@ -119,6 +138,21 @@ namespace GCVisualisation
             };
 
             session.Source.Process();
+        }
+
+        private static ConsoleColor GetColourForGC(int depth)
+        {
+            var colourToUse = ConsoleColor.White;
+            if (depth == 0)
+                colourToUse = ConsoleColor.Yellow;
+            else if (depth == 1)
+                colourToUse = ConsoleColor.Blue;
+            else if (depth == 2)
+                colourToUse = ConsoleColor.Red;
+            else
+                colourToUse = ConsoleColor.Green;
+
+            return colourToUse;
         }
     }
 }
