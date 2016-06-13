@@ -55,24 +55,32 @@ namespace GCVisualisation
             session.Dispose();
         }
 
+        private static object ConsoleLock = new object();
         private static void StartProcessingEvents()
         {
             // See https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/pal/prebuilt/inc/mscoree.h#L294-L315
             session.Source.Clr.RuntimeStart += runtimeData =>
             {
-                Console.WriteLine("StartupFlags = {0:X}", runtimeData.StartupFlags);
-                Console.WriteLine("CONCURRENT_GC = {0}, SERVER_GC = {1}", 
-                                (runtimeData.StartupFlags & StartupFlags.CONCURRENT_GC) == StartupFlags.CONCURRENT_GC,
-                                (runtimeData.StartupFlags & StartupFlags.SERVER_GC) == StartupFlags.SERVER_GC);
-            };
-
-            session.Source.Clr.GCAllocationTick += gcData =>
-            {
-                if (ProcessIdsUsedInRuns.Contains(gcData.ProcessID) == false)
+                if (ProcessIdsUsedInRuns.Contains(runtimeData.ProcessID) == false)
                     return;
 
-                // gcData.AllocationAmount64;
-                Console.Write("#");
+                lock (ConsoleLock)
+                {
+                    Console.WriteLine("\nCONCURRENT_GC = {0}, SERVER_GC = {1}",
+                                    (runtimeData.StartupFlags & StartupFlags.CONCURRENT_GC) == StartupFlags.CONCURRENT_GC,
+                                    (runtimeData.StartupFlags & StartupFlags.SERVER_GC) == StartupFlags.SERVER_GC);
+                }
+            };
+
+            session.Source.Clr.GCAllocationTick += allocationData =>
+            {
+                if (ProcessIdsUsedInRuns.Contains(allocationData.ProcessID) == false)
+                    return;
+                
+                lock (ConsoleLock)
+                {
+                    Console.Write(".");
+                }
             };
 
             session.Source.Clr.GCStart += gcData =>
@@ -80,25 +88,34 @@ namespace GCVisualisation
                 if (ProcessIdsUsedInRuns.Contains(gcData.ProcessID) == false)
                     return;
 
-                //if (gcData.Reason != GCReason.Induced)
-                {
-                    //Console.ForegroundColor = ConsoleColor.Green;
-                    var colourToUse = ConsoleColor.White;
-                    if (gcData.Depth == 0)
-                        colourToUse = ConsoleColor.Yellow;
-                    else if (gcData.Depth == 1)
-                        colourToUse = ConsoleColor.Blue;
-                    else if (gcData.Depth == 2)
-                        colourToUse = ConsoleColor.Red;
-                    else
-                        colourToUse = ConsoleColor.Green;
+                var colourToUse = ConsoleColor.White;
+                if (gcData.Depth == 0)
+                    colourToUse = ConsoleColor.Yellow;
+                else if (gcData.Depth == 1)
+                    colourToUse = ConsoleColor.Blue;
+                else if (gcData.Depth == 2)
+                    colourToUse = ConsoleColor.Red;
+                else
+                    colourToUse = ConsoleColor.Green;
 
-                    Console.ForegroundColor = ConsoleColor.Black;
-                    Console.BackgroundColor = colourToUse;
-                    //Console.ForegroundColor = colourToUse;
+                lock (ConsoleLock)
+                {
+                    if (gcData.Type == GCType.ForegroundGC || gcData.Type == GCType.NonConcurrentGC)
+                    {
+                        // Make the FG coloured/highlighted
+                        Console.ForegroundColor = colourToUse;
+                        Console.BackgroundColor = ConsoleColor.Black;
+                    }
+                    else // GCType.BackgroundGC
+                    {
+                        // Make the BG coloured/highlighted
+                        Console.ForegroundColor = ConsoleColor.Black;
+                        Console.BackgroundColor = colourToUse;
+                    }
+
                     Console.Write(gcData.Depth);
                     Console.ResetColor();
-                }                
+                }
             };
 
             session.Source.Process();
