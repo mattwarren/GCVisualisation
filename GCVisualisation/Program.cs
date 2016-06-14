@@ -61,7 +61,7 @@ namespace GCVisualisation
         private static void PrintSymbolInformation()
         {
             Console.WriteLine("Key to symbols:");
-            Console.WriteLine(" - '.'   represents ~100K of memory allocations");
+            Console.WriteLine(" - '.'     represents ~100K of memory ALLOCATIONS");
 
             Console.Write(" - ");
             Console.ForegroundColor = GetColourForGC(0); Console.Write("0");
@@ -70,12 +70,18 @@ namespace GCVisualisation
             Console.ResetColor(); Console.Write("/");
             Console.ForegroundColor = GetColourForGC(2); Console.Write("2");
             Console.ResetColor();
-            Console.WriteLine(" indicates a FOREGROUND GC Collection, for the given generation (0, 1 or 2)");
+            Console.WriteLine("   indicates a FOREGROUND GC Collection, for the given generation (0, 1 or 2)");
 
             Console.Write(" - ");
             Console.BackgroundColor = GetColourForGC(2); Console.ForegroundColor = ConsoleColor.Black; Console.Write("2");
             Console.ResetColor();
-            Console.WriteLine("     indicates a BACKGROUND GC Collection (Gen 2 only)");
+            Console.WriteLine("       indicates a BACKGROUND GC Collection (Gen 2 only)");
+
+            Console.WriteLine(" - ░/▒/▓/█ indicates a PAUSE due to a GC Collection");
+            Console.WriteLine("   - ░ up to 25 msecs");
+            Console.WriteLine("   - ▒ 25 to 50 msecs");
+            Console.WriteLine("   - ▓ 50 to 75 msecs");
+            Console.WriteLine("   - █ 75 msecs or longer");
 
             Console.WriteLine(new string('#', 25) + "\n");
         }
@@ -169,23 +175,28 @@ namespace GCVisualisation
                     return;
 
                 var pauseDurationMSec = restartData.TimeStampRelativeMSec - pauseStart;
-                //Console.WriteLine(" <Pause: {0:N2} MSec> ", pauseDurationMSec);
-                // 0 -> 100 MSecs = "P", 
-                // 100 -> 200 MSecs = "PP", 
-                var pauseDuration = (int)(pauseDurationMSec / 100) + 1; 
-                if (pauseDuration == 0)
-                    return;
+                var pauseText = new StringBuilder();
+                while (pauseDurationMSec > 100)
+                {
+                    pauseText.Append('█');
+                    pauseDurationMSec -= 100;
+                }
+                if (pauseDurationMSec > 75)
+                    pauseText.Append('█');
+                else if (pauseDurationMSec > 50)
+                    pauseText.Append('▓');
+                else if (pauseDurationMSec > 25)
+                    pauseText.Append('▒');
+                else
+                    pauseText.Append("░");
 
-                var pauseText = new string('P', pauseDuration);
-                if (pauseText.Length == 0)
+                //pauseText.AppendFormat("({0:N2} ms)", restartData.TimeStampRelativeMSec - pauseStart);
+
                 lock (ConsoleLock)
                 {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.BackgroundColor = ConsoleColor.DarkGray;
-                }
-
-                Console.Write(pauseText);
-                Console.ResetColor();            
+                    Console.ResetColor();
+                    Console.Write(pauseText.ToString());
+                }          
             };
 
             session.Source.Process();
