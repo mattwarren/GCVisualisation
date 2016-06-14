@@ -6,6 +6,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace GCVisualisation
@@ -14,6 +15,7 @@ namespace GCVisualisation
     {
         private static TraceEventSession session;
         private static ConcurrentBag<int> ProcessIdsUsedInRuns = new ConcurrentBag<int>();
+        private static long totalBytesAllocated, gen0, gen1, gen2, gen2Background, gen3;
 
         static void Main(string[] args)
         {
@@ -37,7 +39,6 @@ namespace GCVisualisation
 
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = args[0];
-            //startInfo.Arguments = file;
             var process = Process.Start(startInfo);
             ProcessIdsUsedInRuns.Add(process.Id);
             process.Exited += (sender, e) => Console.WriteLine("\nProcess has exited\n");
@@ -49,13 +50,54 @@ namespace GCVisualisation
 
             PrintSymbolInformation();
             
+            Console.WriteLine("Visualising GC Events, press <ENTER>, <ESC> or 'q' to exit");
+            ConsoleKeyInfo cki;
+            while (true)
+            {
+                cki = Console.ReadKey();
+                if (cki.Key == ConsoleKey.Enter ||
+                    cki.Key == ConsoleKey.Escape || 
+                    cki.Key == ConsoleKey.Q)
+                {
+                    break;
+                }
 
-            Console.WriteLine("Visualising GC Events, press <ENTER> to exit"); 
-            Console.ReadLine();
+                if (cki.Key == ConsoleKey.S)
+                {
+                    lock (ConsoleLock)
+                    {
+                        PrintSummaryInfo();
+                    }
+                }
+            }
+            PrintSummaryInfo();
+            Console.WriteLine();
 
             if (process.HasExited == false)
                 process.Kill();
             session.Dispose();
+        }
+
+        private static void PrintSummaryInfo()
+        {
+            Console.ForegroundColor = ConsoleColor.DarkYellow;
+            if (Console.CursorLeft > 0)
+                Console.WriteLine();
+            Console.WriteLine("Memory Allocations:");
+            // 100GB = 107,374,182,400 bytes, so min-width = 15
+            Console.WriteLine("  {0,15:N0} bytes currently allocated", GC.GetTotalMemory(forceFullCollection: false));
+            Console.WriteLine("  {0,15:N0} bytes allocated in total", totalBytesAllocated);
+            //Console.WriteLine("GC Collections - Gen0: {0:N0}, Gen1: {1:N0}, Gen2 {2:N0}, Gen2 B/G: {3:N0}, Gen3: {4:N0}",
+            //                  gen0, gen1, gen2, gen2Background, gen3);
+            Console.WriteLine("GC Collections:");
+            Console.WriteLine("  {0,4:N0} - generation 0", gen0);
+            Console.WriteLine("  {0,4:N0} - generation 1", gen1);
+            Console.WriteLine("  {0,4:N0} - generation 2", gen2);
+            Console.WriteLine("  {0,4:N0} - generation 2 B/G", gen2Background);
+            if (gen3 > 0)
+                Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
+
+            Console.ResetColor();
         }
 
         private static void PrintSymbolInformation()
@@ -107,7 +149,9 @@ namespace GCVisualisation
             {
                 if (ProcessIdsUsedInRuns.Contains(allocationData.ProcessID) == false)
                     return;
-                
+
+                totalBytesAllocated += allocationData.AllocationAmount;
+
                 lock (ConsoleLock)
                 {
                     Console.Write(".");
@@ -137,6 +181,8 @@ namespace GCVisualisation
                         Console.ForegroundColor = ConsoleColor.Black;
                         Console.BackgroundColor = colourToUse;
                     }
+
+                    IncrementGCCollectionCounts(gcData);
 
                     Console.Write(gcData.Depth);
                     Console.ResetColor();
@@ -200,6 +246,20 @@ namespace GCVisualisation
             };
 
             session.Source.Process();
+        }
+
+        private static void IncrementGCCollectionCounts(GCStartTraceData gcData)
+        {
+            if (gcData.Type == GCType.BackgroundGC && gcData.Depth == 2)
+                gen2Background++;
+            else if (gcData.Depth == 0)
+                gen0++;
+            else if (gcData.Depth == 1)
+                gen1++;
+            else if (gcData.Depth == 2)
+                gen2++;
+            else if (gcData.Depth == 3)
+                gen3++; // L.O.H
         }
 
         private static ConsoleColor GetColourForGC(int depth)
