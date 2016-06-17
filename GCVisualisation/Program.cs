@@ -36,8 +36,8 @@ namespace GCVisualisation
                                    TraceEventLevel.Verbose,
                                    (ulong)(ClrTraceEventParser.Keywords.GC));
 
-            // The ETW collection thread starts receiving events immediately, but we only care about one process
-            Task.Factory.StartNew(StartProcessingEvents, TaskCreationOptions.LongRunning);
+            // The ETW collection thread starts receiving all events immediately, but we filter on the Process Id
+            var processingTask = Task.Factory.StartNew(StartProcessingEvents, TaskCreationOptions.LongRunning);
 
             ProcessStartInfo startInfo = new ProcessStartInfo();
             startInfo.FileName = args[0];
@@ -48,6 +48,9 @@ namespace GCVisualisation
             {
                 Console.WriteLine("\nConsole being killed, tidying up\n");
                 session.Dispose();
+                if (process.HasExited == false)
+                    process.Kill();
+                Console.WriteLine();
             };
 
             PrintSymbolInformation();
@@ -55,8 +58,14 @@ namespace GCVisualisation
             Console.WriteLine("Visualising GC Events, press <ENTER>, <ESC> or 'q' to exit");
             Console.WriteLine("You can also push 's' at any time and the current summary will be displayed");
             ConsoleKeyInfo cki;
-            while (true)
+            while (process.HasExited == false)
             {
+                if (Console.KeyAvailable == false)
+                {
+                    Thread.Sleep(250);
+                    continue;
+                }
+
                 cki = Console.ReadKey();
                 if (cki.Key == ConsoleKey.Enter ||
                     cki.Key == ConsoleKey.Escape || 
@@ -77,8 +86,17 @@ namespace GCVisualisation
             if (process.HasExited == false)
                 process.Kill();
 
+            // Flush the session before we finish, so that we get all the events possible
+            session.Flush();
+            // wait a little while for all events to come through (Flush() doesn't seem to do this?)
+            Thread.Sleep(3000);
+            // Now kill the session completely
+            session.Dispose();
+            
+            var completed = processingTask.Wait(millisecondsTimeout: 3000);
+            if (!completed)
+                Console.WriteLine("\nWait timed out, the Processing Task is still running");
 
-            Console.ResetColor();
             PrintSummaryInfo();
             Console.WriteLine();
         }
