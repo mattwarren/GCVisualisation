@@ -7,6 +7,7 @@ using System.Collections.Concurrent;
 using System.Diagnostics;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace GCVisualisation
@@ -16,6 +17,7 @@ namespace GCVisualisation
         private static TraceEventSession session;
         private static ConcurrentBag<int> ProcessIdsUsedInRuns = new ConcurrentBag<int>();
         private static long totalBytesAllocated, gen0, gen1, gen2, gen2Background, gen3;
+        private static double timeInGc, totalGcPauseTime, largestGcPause, startTime, stopTime;
 
         static void Main(string[] args)
         {
@@ -51,6 +53,7 @@ namespace GCVisualisation
             PrintSymbolInformation();
             
             Console.WriteLine("Visualising GC Events, press <ENTER>, <ESC> or 'q' to exit");
+            Console.WriteLine("You can also push 's' at any time and the current summary will be displayed");
             ConsoleKeyInfo cki;
             while (true)
             {
@@ -70,34 +73,14 @@ namespace GCVisualisation
                     }
                 }
             }
-            PrintSummaryInfo();
-            Console.WriteLine();
 
             if (process.HasExited == false)
                 process.Kill();
-            session.Dispose();
-        }
 
-        private static void PrintSummaryInfo()
-        {
-            Console.ForegroundColor = ConsoleColor.DarkYellow;
-            if (Console.CursorLeft > 0)
-                Console.WriteLine();
-            Console.WriteLine("Memory Allocations:");
-            // 100GB = 107,374,182,400 bytes, so min-width = 15
-            Console.WriteLine("  {0,15:N0} bytes currently allocated", GC.GetTotalMemory(forceFullCollection: false));
-            Console.WriteLine("  {0,15:N0} bytes allocated in total", totalBytesAllocated);
-            //Console.WriteLine("GC Collections - Gen0: {0:N0}, Gen1: {1:N0}, Gen2 {2:N0}, Gen2 B/G: {3:N0}, Gen3: {4:N0}",
-            //                  gen0, gen1, gen2, gen2Background, gen3);
-            Console.WriteLine("GC Collections:");
-            Console.WriteLine("  {0,4:N0} - generation 0", gen0);
-            Console.WriteLine("  {0,4:N0} - generation 1", gen1);
-            Console.WriteLine("  {0,4:N0} - generation 2", gen2);
-            Console.WriteLine("  {0,4:N0} - generation 2 B/G", gen2Background);
-            if (gen3 > 0)
-                Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
 
             Console.ResetColor();
+            PrintSummaryInfo();
+            Console.WriteLine();
         }
 
         private static void PrintSymbolInformation()
@@ -128,6 +111,33 @@ namespace GCVisualisation
             Console.WriteLine(new string('#', 25) + "\n");
         }
 
+        private static void PrintSummaryInfo()
+        {
+            Console.ForegroundColor = ConsoleColor.DarkYellow;
+
+            Console.WriteLine("\nMemory Allocations:");
+            // 100GB = 107,374,182,400 bytes, so min-width = 15
+            Console.WriteLine("  {0,15:N0} bytes currently allocated", GC.GetTotalMemory(forceFullCollection: false));
+            Console.WriteLine("  {0,15:N0} bytes have been allocated in total", totalBytesAllocated);
+
+            var totalGC = gen0 + gen1 + gen2 + gen3;
+            var testTime = stopTime - startTime;
+            Console.WriteLine("GC Collections:\n  {0:N0} in total ({1:N0} excluding B/G)", totalGC + gen2Background, totalGC);
+            Console.WriteLine("  {0,4:N0} - generation 0", gen0);
+            Console.WriteLine("  {0,4:N0} - generation 1", gen1);
+            Console.WriteLine("  {0,4:N0} - generation 2", gen2);
+            Console.WriteLine("  {0,4:N0} - generation 2 (B/G)", gen2Background);
+            if (gen3 > 0)
+                Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
+
+            Console.WriteLine("Time in GC: {0:N1} ms ({1:N2} ms avg) ", timeInGc, timeInGc / totalGC);
+            Console.WriteLine("Time under test: {0:N0} ms ({1:P2} spent in GC)", testTime, timeInGc / testTime);
+            Console.WriteLine("Total GC Pause time: {0:N1} ms", totalGcPauseTime);
+            Console.WriteLine("Largest GC Pause: {0:N2} ms", largestGcPause);
+
+            Console.ResetColor();
+        }
+
         private static object ConsoleLock = new object();
         private static void StartProcessingEvents()
         {
@@ -150,6 +160,11 @@ namespace GCVisualisation
                 if (ProcessIdsUsedInRuns.Contains(allocationData.ProcessID) == false)
                     return;
 
+                if (startTime == 0)
+                    startTime = allocationData.TimeStampRelativeMSec;
+
+                stopTime = allocationData.TimeStampRelativeMSec;
+
                 totalBytesAllocated += allocationData.AllocationAmount;
 
                 lock (ConsoleLock)
@@ -159,14 +174,17 @@ namespace GCVisualisation
             };
 
             GCType lastGCType = 0;
+            double gcStart = 0;
             session.Source.Clr.GCStart += gcData =>
             {
                 if (ProcessIdsUsedInRuns.Contains(gcData.ProcessID) == false)
                     return;
 
-                var colourToUse = GetColourForGC(gcData.Depth);
                 lastGCType = gcData.Type;
+                gcStart = gcData.TimeStampRelativeMSec;
+                IncrementGCCollectionCounts(gcData);
 
+                var colourToUse = GetColourForGC(gcData.Depth);
                 lock (ConsoleLock)
                 {
                     if (gcData.Type == GCType.ForegroundGC || gcData.Type == GCType.NonConcurrentGC)
@@ -182,11 +200,16 @@ namespace GCVisualisation
                         Console.BackgroundColor = colourToUse;
                     }
 
-                    IncrementGCCollectionCounts(gcData);
-
                     Console.Write(gcData.Depth);
+                    // For DEBUGGING only
+                    //Console.Write("[{0}]", gcData.ThreadID);
                     Console.ResetColor();
                 }
+            };
+
+            session.Source.Clr.GCStop += gcData =>
+            {
+                timeInGc += gcData.TimeStampRelativeMSec - gcStart;
             };
 
             //In a typical blocking GC (this means all ephemeral GCs and full blocking GCs) the event sequence is very simple:
@@ -220,6 +243,8 @@ namespace GCVisualisation
                 if (lastGCType == GCType.BackgroundGC)
                     return;
 
+                stopTime = restartData.TimeStampRelativeMSec;
+
                 var pauseDurationMSec = restartData.TimeStampRelativeMSec - pauseStart;
                 var pauseText = new StringBuilder();
                 while (pauseDurationMSec > 100)
@@ -236,7 +261,12 @@ namespace GCVisualisation
                 else
                     pauseText.Append("░");
 
-                //pauseText.AppendFormat("({0:N2} ms)", restartData.TimeStampRelativeMSec - pauseStart);
+                totalGcPauseTime += pauseDurationMSec;
+                if (pauseDurationMSec > largestGcPause)
+                    largestGcPause = pauseDurationMSec;
+
+                // For DEBUGGING only
+                //pauseText.AppendFormat("[{0}]({1:N2} ms)", restartData.ThreadID, restartData.TimeStampRelativeMSec - pauseStart);
 
                 lock (ConsoleLock)
                 {
