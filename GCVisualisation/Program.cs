@@ -148,10 +148,10 @@ namespace GCVisualisation
             if (gen3 > 0)
                 Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
 
-            Console.WriteLine("Time in GC: {0:N1} ms ({1:N2} ms avg) ", timeInGc, timeInGc / totalGC);
-            Console.WriteLine("Time under test: {0:N0} ms ({1:P2} spent in GC)", testTime, timeInGc / testTime);
-            Console.WriteLine("Total GC Pause time: {0:N1} ms", totalGcPauseTime);
-            Console.WriteLine("Largest GC Pause: {0:N2} ms", largestGcPause);
+            Console.WriteLine("Time in GC  : {0,12:N2} ms ({1:N2} ms avg per/GC) ", timeInGc, timeInGc / totalGC);
+            Console.WriteLine("Time in test: {0,12:N2} ms ({1:P2} spent in GC)", testTime, timeInGc / testTime);
+            Console.WriteLine("Total GC Pause time  : {0,12:N2} ms", totalGcPauseTime);
+            Console.WriteLine("Largest GC Pause time: {0,12:N2} ms", largestGcPause);
 
             Console.ResetColor();
         }
@@ -193,19 +193,22 @@ namespace GCVisualisation
 
             GCType lastGCType = 0;
             double gcStart = 0;
-            session.Source.Clr.GCStart += gcData =>
+            session.Source.Clr.GCStart += startData =>
             {
-                if (ProcessIdsUsedInRuns.Contains(gcData.ProcessID) == false)
+                if (ProcessIdsUsedInRuns.Contains(startData.ProcessID) == false)
                     return;
 
-                lastGCType = gcData.Type;
-                gcStart = gcData.TimeStampRelativeMSec;
-                IncrementGCCollectionCounts(gcData);
+                if (startTime == 0)
+                    startTime = startData.TimeStampRelativeMSec;
 
-                var colourToUse = GetColourForGC(gcData.Depth);
+                lastGCType = startData.Type;
+                gcStart = startData.TimeStampRelativeMSec;
+                IncrementGCCollectionCounts(startData);
+
+                var colourToUse = GetColourForGC(startData.Depth);
                 lock (ConsoleLock)
                 {
-                    if (gcData.Type == GCType.ForegroundGC || gcData.Type == GCType.NonConcurrentGC)
+                    if (startData.Type == GCType.ForegroundGC || startData.Type == GCType.NonConcurrentGC)
                     {
                         // Make the FG coloured/highlighted
                         Console.ForegroundColor = colourToUse;
@@ -218,16 +221,23 @@ namespace GCVisualisation
                         Console.BackgroundColor = colourToUse;
                     }
 
-                    Console.Write(gcData.Depth);
-                    // For DEBUGGING only
-                    //Console.Write("[{0}]", gcData.ThreadID);
+                    Console.Write(startData.Depth);
                     Console.ResetColor();
                 }
             };
 
-            session.Source.Clr.GCStop += gcData =>
+            session.Source.Clr.GCStop += stopData =>
             {
-                timeInGc += gcData.TimeStampRelativeMSec - gcStart;
+                if (ProcessIdsUsedInRuns.Contains(stopData.ProcessID) == false)
+                    return;
+
+                stopTime = stopData.TimeStampRelativeMSec;
+
+                // If we don't have a matching start event, don't calculate the GC time
+                if (gcStart == 0)
+                    return;
+
+                timeInGc += (stopData.TimeStampRelativeMSec - gcStart);
             };
 
             //In a typical blocking GC (this means all ephemeral GCs and full blocking GCs) the event sequence is very simple:
@@ -237,8 +247,6 @@ namespace GCVisualisation
             //GCEnd_V1 Event             <– actual GC is done
             //GCRestartEEBegin_V1 Event
             //GCRestartEEEnd_V1 Event    <– resumption is done.
-
-            // When NOT a B/G GC, Suspension MSec column is simply (timestamp of the GCSuspendEEEnd_V1 – timestamp of the GCSuspendEE_V1).
 
             double pauseStart = 0;
             session.Source.Clr.GCSuspendEEStop += suspendData =>
@@ -254,6 +262,8 @@ namespace GCVisualisation
                 if (ProcessIdsUsedInRuns.Contains(restartData.ProcessID) == false)
                     return;
 
+                stopTime = restartData.TimeStampRelativeMSec;
+
                 // Only display this if the GC Type is Foreground, (Background is different!!)
                 // 0x0 - NonConcurrentGC - Blocking garbage collection occurred outside background garbage collection.
                 // 0x1 - BackgroundGC    - Background garbage collection.
@@ -261,7 +271,9 @@ namespace GCVisualisation
                 if (lastGCType == GCType.BackgroundGC)
                     return;
 
-                stopTime = restartData.TimeStampRelativeMSec;
+                // If we don't have a matching start event, don't calculate the "pause" time
+                if (pauseStart == 0)
+                    return;
 
                 var pauseDurationMSec = restartData.TimeStampRelativeMSec - pauseStart;
                 var pauseText = new StringBuilder();
@@ -282,9 +294,6 @@ namespace GCVisualisation
                 totalGcPauseTime += pauseDurationMSec;
                 if (pauseDurationMSec > largestGcPause)
                     largestGcPause = pauseDurationMSec;
-
-                // For DEBUGGING only
-                //pauseText.AppendFormat("[{0}]({1:N2} ms)", restartData.ThreadID, restartData.TimeStampRelativeMSec - pauseStart);
 
                 lock (ConsoleLock)
                 {
