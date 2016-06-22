@@ -10,6 +10,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GCVisualisation", "GCVisual
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "SampleApp", "SampleApp\SampleApp.csproj", "{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GCBench", "GCBench\GCBench.csproj", "{55A6DD7B-02E9-412F-B268-481A5068EA11}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -24,6 +26,10 @@ Global
 		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{059E1CE3-E6CE-4FE4-95A6-C3DBB2A487FD}.Release|Any CPU.Build.0 = Release|Any CPU
+		{55A6DD7B-02E9-412F-B268-481A5068EA11}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{55A6DD7B-02E9-412F-B268-481A5068EA11}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{55A6DD7B-02E9-412F-B268-481A5068EA11}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{55A6DD7B-02E9-412F-B268-481A5068EA11}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
