@@ -9,6 +9,7 @@ using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using System.Collections.Generic;
 
 namespace GCVisualisation
 {
@@ -18,6 +19,7 @@ namespace GCVisualisation
         private static ConcurrentBag<int> ProcessIdsUsedInRuns = new ConcurrentBag<int>();
         private static long totalBytesAllocated, gen0, gen1, gen2, gen2Background, gen3;
         private static double timeInGc, totalGcPauseTime, largestGcPause, startTime, stopTime;
+        private static List<double>[] binning = new List<double>[4]; // just in case of LOH, but not printed
 
         static void Main(string[] args)
         {
@@ -30,6 +32,11 @@ namespace GCVisualisation
             //   - https://blogs.msdn.microsoft.com/maoni/2015/11/20/are-you-glad/
             //   - https://blogs.msdn.microsoft.com/maoni/2006/06/07/suspending-and-resuming-threads-for-gc/
 
+            for (int i = 0; i < binning.Length; i++)
+            {
+                binning[i] = new List<double>();
+            }
+
             var sessionName = "GCVisualiser";
             session = new TraceEventSession(sessionName);
             session.EnableProvider(ClrTraceEventParser.ProviderGuid,
@@ -39,11 +46,8 @@ namespace GCVisualisation
             // The ETW collection thread starts receiving all events immediately, but we filter on the Process Id
             var processingTask = Task.Factory.StartNew(StartProcessingEvents, TaskCreationOptions.LongRunning);
 
-            ProcessStartInfo startInfo = new ProcessStartInfo();
-            startInfo.FileName = args[0];
-            var process = Process.Start(startInfo);
+            var process = Process.Start(args[0]);
             ProcessIdsUsedInRuns.Add(process.Id);
-            process.Exited += (sender, e) => Console.WriteLine("\nProcess has exited\n");
             Console.CancelKeyPress += (sender, e) =>
             {
                 Console.WriteLine("\nConsole being killed, tidying up\n");
@@ -105,6 +109,7 @@ namespace GCVisualisation
         {
             Console.WriteLine("Key to symbols:");
             Console.WriteLine(" - '.'     represents ~100K of memory ALLOCATIONS");
+            Console.WriteLine(" - 'o'     represents >200K of memory ALLOCATIONS");
 
             Console.Write(" - ");
             Console.ForegroundColor = GetColourForGC(0); Console.Write("0");
@@ -129,8 +134,43 @@ namespace GCVisualisation
             Console.WriteLine(new string('#', 25) + "\n");
         }
 
+        private static string Statistics(List<double> bin)
+        {
+            if (bin.Count == 0)
+            {
+                return "no data";
+            }
+
+            var max = bin.Max();
+            var avg = bin.Average();
+            var total = bin.Sum();
+            // this seems a bit useless
+            //var stdev = bin.Count == 1 ? 0 : Math.Sqrt(bin.Sum(x => Math.Pow(x - avg, 2)) / (bin.Count - 1));
+
+            const int DIVISIONS = 10;
+            var d = max/DIVISIONS;
+
+            var lu = bin.ToLookup(x => (int)( x / d));
+
+            var maxlen = lu.Max(x => x.Count());
+
+            var output = new StringBuilder(new string(' ', DIVISIONS));
+
+            for (int i = 0; i < DIVISIONS; i++)
+            {
+                var len = lu[i].Count();
+                // seems you need a special font for this... #sadpanda
+                output[i] = len == 0 ? ' ' : (char)(9601 + ((len * 7.99999) / maxlen));
+                // alternative output, too confusing :(
+                //output[i] = ((len * 9) / maxlen).ToString()[0];
+            }
+
+            return $"max: {max,6:F2} ms avg: {avg,6:F2} ms total: {total,8:F2} ms";// {output} {d,4:F2} ms per division";
+        }
+
         private static void PrintSummaryInfo()
         {
+            session.Flush();
             Console.ForegroundColor = ConsoleColor.DarkYellow;
 
             Console.WriteLine("\nMemory Allocations:");
@@ -141,9 +181,9 @@ namespace GCVisualisation
             var totalGC = gen0 + gen1 + gen2 + gen3;
             var testTime = stopTime - startTime;
             Console.WriteLine("GC Collections:\n  {0:N0} in total ({1:N0} excluding B/G)", totalGC + gen2Background, totalGC);
-            Console.WriteLine("  {0,4:N0} - generation 0", gen0);
-            Console.WriteLine("  {0,4:N0} - generation 1", gen1);
-            Console.WriteLine("  {0,4:N0} - generation 2", gen2);
+            Console.WriteLine("  {0,4:N0} - generation 0 - {1}", gen0, Statistics(binning[0]));
+            Console.WriteLine("  {0,4:N0} - generation 1 - {1}", gen1, Statistics(binning[1]));
+            Console.WriteLine("  {0,4:N0} - generation 2 - {1}", gen2, Statistics(binning[2]));
             Console.WriteLine("  {0,4:N0} - generation 2 (B/G)", gen2Background);
             if (gen3 > 0)
                 Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
@@ -187,11 +227,19 @@ namespace GCVisualisation
 
                 lock (ConsoleLock)
                 {
-                    Console.Write(".");
+                    if (allocationData.AllocationAmount > 200000)
+                    {
+                        Console.Write("o");
+                    }
+                    else
+                    {
+                        Console.Write(".");
+                    }
                 }
             };
 
             GCType lastGCType = 0;
+            int lastGen = 0;
             double gcStart = 0;
             session.Source.Clr.GCStart += startData =>
             {
@@ -202,6 +250,7 @@ namespace GCVisualisation
                     startTime = startData.TimeStampRelativeMSec;
 
                 lastGCType = startData.Type;
+                lastGen = startData.Depth;
                 gcStart = startData.TimeStampRelativeMSec;
                 IncrementGCCollectionCounts(startData);
 
@@ -237,7 +286,9 @@ namespace GCVisualisation
                 if (gcStart == 0)
                     return;
 
-                timeInGc += (stopData.TimeStampRelativeMSec - gcStart);
+                var gcTime = stopData.TimeStampRelativeMSec - gcStart;
+                binning[lastGen].Add(gcTime);
+                timeInGc += gcTime;
             };
 
             //In a typical blocking GC (this means all ephemeral GCs and full blocking GCs) the event sequence is very simple:
