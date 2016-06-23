@@ -66,9 +66,13 @@ using System.Threading.Tasks;
 class Node
 {
     public Node left, right;
-    int i, j;
-    public Node(Node l, Node r) { left = l; right = r; }
-    public Node() { }
+    
+    public Node(Node l, Node r) : this()
+    {
+        left = l;
+        right = r;
+    }
+    public Node() {}
 }
 
 class GCBench
@@ -91,19 +95,19 @@ class GCBench
         else
         {
             long tStart, tFinish;
-            tStart = DateTime.Now.Ticks;
+            tStart = DateTime.UtcNow.Ticks;
 
-            Parallel.For(0, n, originalMain);
-            tFinish = DateTime.Now.Ticks;
+            Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, n >> 1) }, originalMain);
+            tFinish = DateTime.UtcNow.Ticks;
             PrintDiagnostics();
             Console.WriteLine($"{n} gcbench:{kStretchTreeDepth} took {new TimeSpan(tFinish - tStart).TotalMilliseconds:F0} ms.");
         }
     }
 
-    public static int kStretchTreeDepth = 18;  // about 16Mb
+    public static int kStretchTreeDepth = 20;  // about 16Mb
     public static int kLongLivedTreeDepth = 18;  // about 16Mb
-    public static int kArraySize = 2000000;       // about 16Mb
-    public const int kMinTreeDepth = 4;
+    public static int kArraySize = 4000000;       // about 16Mb
+    public const int kMinTreeDepth = 10;
     public static int kMaxTreeDepth = 16;
 
     // Nodes used by a tree of a given size
@@ -151,7 +155,7 @@ class GCBench
 
     static void PrintDiagnostics()
     {
-        GC.Collect();
+        GC.Collect(2, GCCollectionMode.Optimized, false);
         Console.WriteLine($" Working set={Environment.WorkingSet:N0} bytes");
     }
 
@@ -164,22 +168,22 @@ class GCBench
 
         Console.WriteLine("Creating " + iNumIters +
                            " trees of depth " + depth);
-        tStart = DateTime.Now.Ticks;
+        tStart = DateTime.UtcNow.Ticks;
         for (int i = 0; i < iNumIters; ++i)
         {
             tempTree = new Node();
             Populate(depth, tempTree);
             tempTree = null;
         }
-        tFinish = DateTime.Now.Ticks;
+        tFinish = DateTime.UtcNow.Ticks;
         Console.WriteLine($"\tTop down construction took {new TimeSpan(tFinish - tStart).TotalMilliseconds:F0} ms");
-        tStart = DateTime.Now.Ticks;
+        tStart = DateTime.UtcNow.Ticks;
         for (int i = 0; i < iNumIters; ++i)
         {
             tempTree = MakeTree(depth);
             tempTree = null;
         }
-        tFinish = DateTime.Now.Ticks;
+        tFinish = DateTime.UtcNow.Ticks;
         Console.WriteLine($"\tBottom up construction took {new TimeSpan(tFinish - tStart).TotalMilliseconds:F0} ms");
     }
 
@@ -194,7 +198,7 @@ class GCBench
                 " Stretching memory with a binary tree of depth "
                 + kStretchTreeDepth);
         PrintDiagnostics();
-        tStart = DateTime.Now.Ticks;
+        tStart = DateTime.UtcNow.Ticks;
 
         // Stretch the memory space quickly
         tempTree = MakeTree(kStretchTreeDepth);
@@ -228,9 +232,10 @@ class GCBench
         // fake reference to LongLivedTree
         // and array
         // to keep them from being optimized away
-
-        tFinish = DateTime.Now.Ticks;
+        longLivedTree = null;
+        tFinish = DateTime.UtcNow.Ticks;
         PrintDiagnostics();
         Console.WriteLine($"Completed in {new TimeSpan(tFinish - tStart).TotalMilliseconds:F0} ms.");
+
     }
 } // class JavaGC
