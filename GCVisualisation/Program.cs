@@ -10,6 +10,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.IO;
 
 namespace GCVisualisation
 {
@@ -46,7 +47,47 @@ namespace GCVisualisation
             // The ETW collection thread starts receiving all events immediately, but we filter on the Process Id
             var processingTask = Task.Factory.StartNew(StartProcessingEvents, TaskCreationOptions.LongRunning);
 
-            var process = Process.Start(args[0]);
+            var exename = args[0];
+
+            var procname = Path.GetFileNameWithoutExtension(exename);
+            var existingProcs = Process.GetProcessesByName(procname);
+
+            var process = Process.Start(exename);
+            
+            // check for some shell executing the process, eg comemu/cmder
+            if (!process.ProcessName.Equals(procname, StringComparison.OrdinalIgnoreCase))
+            {
+                Process subprocess = null;
+                while (!process.HasExited)
+                {
+                    Thread.Sleep(100);
+                    Console.WriteLine($"Trying to find '{procname}' process...");
+                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs).FirstOrDefault();
+                    if (subprocess != null)
+                    {
+                        break;
+                    }
+                }
+
+                // one last time
+                if (subprocess == null)
+                {
+                    Thread.Sleep(100);
+                    Console.WriteLine($"Last attempt to find '{procname}' process");
+                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs).FirstOrDefault();
+                }
+
+                if (subprocess == null)
+                {
+                    Console.WriteLine($"'{procname}' process not found, goodbye");
+                    return;
+                }
+                else
+                {
+                    process = subprocess;
+                }
+            }
+
             ProcessIdsUsedInRuns.Add(process.Id);
             Console.CancelKeyPress += (sender, e) =>
             {
@@ -180,13 +221,13 @@ namespace GCVisualisation
 
             var totalGC = gen0 + gen1 + gen2 + gen3;
             var testTime = stopTime - startTime;
-            Console.WriteLine("GC Collections:\n  {0:N0} in total ({1:N0} excluding B/G)", totalGC + gen2Background, totalGC);
-            Console.WriteLine("  {0,4:N0} - generation 0 - {1}", gen0, Statistics(binning[0]));
-            Console.WriteLine("  {0,4:N0} - generation 1 - {1}", gen1, Statistics(binning[1]));
-            Console.WriteLine("  {0,4:N0} - generation 2 - {1}", gen2, Statistics(binning[2]));
-            Console.WriteLine("  {0,4:N0} - generation 2 (B/G)", gen2Background);
+            Console.WriteLine("GC Collections:\n  {0,5:N0} in total ({1:N0} excluding B/G)", totalGC + gen2Background, totalGC);
+            Console.WriteLine("  {0,5:N0} - generation 0 - {1}", gen0, Statistics(binning[0]));
+            Console.WriteLine("  {0,5:N0} - generation 1 - {1}", gen1, Statistics(binning[1]));
+            Console.WriteLine("  {0,5:N0} - generation 2 - {1}", gen2, Statistics(binning[2]));
+            Console.WriteLine("  {0,5:N0} - generation 2 (B/G)", gen2Background);
             if (gen3 > 0)
-                Console.WriteLine("  {0,4:N0} - generation 3 (LOH)", gen3);
+                Console.WriteLine("  {0,5:N0} - generation 3 (LOH)", gen3);
 
             Console.WriteLine("Time in GC  : {0,12:N2} ms ({1:N2} ms avg per/GC) ", timeInGc, timeInGc / totalGC);
             Console.WriteLine("Time in test: {0,12:N2} ms ({1:P2} spent in GC)", testTime, timeInGc / testTime);
