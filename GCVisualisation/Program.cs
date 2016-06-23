@@ -22,6 +22,12 @@ namespace GCVisualisation
         private static double timeInGc, totalGcPauseTime, largestGcPause, startTime, stopTime;
         private static List<double>[] binning = new List<double>[4]; // just in case of LOH, but not printed
 
+        class ProcessComparer : IEqualityComparer<Process>
+        {
+            public bool Equals(Process x, Process y) => x.Id == y.Id;
+            public int GetHashCode(Process obj) => obj.Id;
+        }
+
         static void Main(string[] args)
         {
             // TODO
@@ -57,12 +63,13 @@ namespace GCVisualisation
             // check for some shell executing the process, eg comemu/cmder
             if (!process.ProcessName.Equals(procname, StringComparison.OrdinalIgnoreCase))
             {
+                var cmp = new ProcessComparer();
                 Process subprocess = null;
                 while (!process.HasExited)
                 {
                     Thread.Sleep(100);
                     Console.WriteLine($"Trying to find '{procname}' process...");
-                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs).FirstOrDefault();
+                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs, cmp).FirstOrDefault();
                     if (subprocess != null)
                     {
                         break;
@@ -74,7 +81,7 @@ namespace GCVisualisation
                 {
                     Thread.Sleep(100);
                     Console.WriteLine($"Last attempt to find '{procname}' process");
-                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs).FirstOrDefault();
+                    subprocess = Process.GetProcessesByName(procname).Except(existingProcs, cmp).FirstOrDefault();
                 }
 
                 if (subprocess == null)
