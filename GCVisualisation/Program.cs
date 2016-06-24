@@ -22,6 +22,9 @@ namespace GCVisualisation
         private static double timeInGc, totalGcPauseTime, largestGcPause, startTime, stopTime;
         private static List<double>[] binning = new List<double>[4]; // just in case of LOH, but not printed
 
+        private static object ConsoleLock = new object();
+        private static object BinningLock = new object();
+
         class ProcessComparer : IEqualityComparer<Process>
         {
             public bool Equals(Process x, Process y) => x.Id == y.Id;
@@ -39,10 +42,7 @@ namespace GCVisualisation
             //   - https://blogs.msdn.microsoft.com/maoni/2015/11/20/are-you-glad/
             //   - https://blogs.msdn.microsoft.com/maoni/2006/06/07/suspending-and-resuming-threads-for-gc/
 
-            for (int i = 0; i < binning.Length; i++)
-            {
-                binning[i] = new List<double>();
-            }
+            ResetStats();
 
             var sessionName = "GCVisualiser";
             session = new TraceEventSession(sessionName);
@@ -109,6 +109,8 @@ namespace GCVisualisation
             
             Console.WriteLine("Visualising GC Events, press <ENTER>, <ESC> or 'q' to exit");
             Console.WriteLine("You can also push 's' at any time and the current summary will be displayed");
+            Console.WriteLine("You can also push 'r' at any time to reset the counters");
+
             ConsoleKeyInfo cki;
             while (process.HasExited == false)
             {
@@ -133,6 +135,10 @@ namespace GCVisualisation
                         PrintSummaryInfo();
                     }
                 }
+                else if (cki.Key == ConsoleKey.R)
+                {
+                    ResetStats();
+                }
             }
 
             if (process.HasExited == false)
@@ -151,6 +157,20 @@ namespace GCVisualisation
 
             PrintSummaryInfo();
             Console.WriteLine();
+        }
+
+        private static void ResetStats()
+        {
+            lock (BinningLock)
+            {
+                for (int i = 0; i < binning.Length; i++)
+                {
+                    binning[i] = new List<double>();
+                }
+            }
+
+            totalBytesAllocated = gen0 = gen1 = gen2 = gen2Background = gen3 = 0;
+            timeInGc = totalGcPauseTime = largestGcPause = startTime = stopTime = 0;
         }
 
         private static void PrintSymbolInformation()
@@ -244,7 +264,6 @@ namespace GCVisualisation
             Console.ResetColor();
         }
 
-        private static object ConsoleLock = new object();
         private static void StartProcessingEvents()
         {
             // See https://github.com/dotnet/coreclr/blob/775003a4c72f0acc37eab84628fcef541533ba4e/src/pal/prebuilt/inc/mscoree.h#L294-L315
@@ -335,8 +354,12 @@ namespace GCVisualisation
                     return;
 
                 var gcTime = stopData.TimeStampRelativeMSec - gcStart;
-                binning[lastGen].Add(gcTime);
                 timeInGc += gcTime;
+
+                lock (BinningLock)
+                {
+                    binning[lastGen].Add(gcTime);
+                }
             };
 
             //In a typical blocking GC (this means all ephemeral GCs and full blocking GCs) the event sequence is very simple:

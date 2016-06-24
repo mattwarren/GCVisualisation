@@ -97,7 +97,7 @@ class GCBench
             long tStart, tFinish;
             tStart = DateTime.UtcNow.Ticks;
 
-            Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = Math.Max(1, n >> 1) }, originalMain);
+            Parallel.For(0, n, new ParallelOptions { MaxDegreeOfParallelism = Math.Min(Environment.ProcessorCount, Math.Max(1, n >> 1)) }, originalMain);
             tFinish = DateTime.UtcNow.Ticks;
             PrintDiagnostics();
             Console.WriteLine($"{n} gcbench:{kStretchTreeDepth} took {new TimeSpan(tFinish - tStart).TotalMilliseconds:F0} ms.");
@@ -161,7 +161,6 @@ class GCBench
 
     static void TimeConstruction(int depth)
     {
-        Node root;
         long tStart, tFinish;
         int iNumIters = NumIters(depth);
         Node tempTree;
